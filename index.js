@@ -13,7 +13,7 @@ const Joi = require("joi");
 
 const port = process.env.PORT || 5000;
 
-const expireTime = 24 * 60 * 60 * 1000;
+const expireTime = 60 * 60 * 1000;
 
 const mongodb_host = process.env.MONGODB_HOST;
 const mongodb_user = process.env.MONGODB_USER;
@@ -126,7 +126,7 @@ app.post('/signupUser', async (req,res) => {
 	console.log("Inserted user.");
 
     const result = await userCollection.find({email: email}).project({name: 1, password: 1, _id: 1}).toArray();
-    
+
     req.session.authenticated = true;
 	req.session.email = email;
     req.session.name = result[0].name;
