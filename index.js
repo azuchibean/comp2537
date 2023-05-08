@@ -83,7 +83,7 @@ function adminAuthorization(req, res, next) {
 app.get('/', (req,res) => {
 
     if (!req.session.authenticated) {
-        res.render("notLoggedIn");
+        res.render("notLogged");
         return;
     }
 
