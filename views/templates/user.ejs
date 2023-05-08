@@ -1,0 +1,13 @@
+<li>
+  <%= user.name %> (<%= user.user_type %>)
+  <form method="POST" action="/promote/<%= user.name %>">
+    <button type="submit" class="btn btn-danger" value="promote">
+      Promote to Admin
+    </button>
+  </form>
+  <form method="POST" action="/demote/<%= user.name %>">
+    <button type="submit" class="btn btn-success" value="demote">
+      Demote to User
+    </button>
+  </form>
+</li>

@@ -27,6 +27,8 @@ var {database} = include('databaseConnection');
 
 const userCollection = database.db(mongodb_database).collection('users');
 
+app.set('view engine', 'ejs');
+
 app.use(express.urlencoded({extended: false}));
 
 var mongoStore = MongoStore.create({
@@ -44,57 +46,58 @@ app.use(session({
 }
 ));
 
+function isValidSession(req) {
+    if (req.session.authenticated) {
+        return true;
+    }
+    return false;
+}
+
+function sessionValidation(req,res,next) {
+    if (isValidSession(req)) {
+        next();
+    }
+    else {
+        res.redirect('/login');
+    }
+}
+
+function isAdmin(req) {
+    if (req.session.user_type == 'admin') {
+        return true;
+    }
+    return false;
+}
+
+function adminAuthorization(req, res, next) {
+    if (!isAdmin(req)) {
+        res.status(403);
+        res.render("errorMessage", {error: "Not Authorized - 403"});
+        return;
+    }
+    else {
+        next();
+    }
+}
+
 app.get('/', (req,res) => {
 
     if (!req.session.authenticated) {
-        var html = `
-            <button onclick="location.href='/signup'">Sign up</button>
-            <br>
-            <button onclick="location.href='/login'">Log in</button>
-        `
-        res.send(html);
+        res.render("notLoggedIn");
         return;
     }
 
     var name = req.session.name;
-
-    console.log(name);
-
-    res.send(`<h1>Hello ${name}</h1>
-    <button onclick="location.href='/members'">Go to Members Area</button>
-    <br>
-    <button onclick="location.href='/logout'">Sign out</button>
-    `);
+    res.render("index", {name: name})
 
 });
 
 app.get('/signup', (req,res) => {
-    var html = `
-    create user
-    <form action='/signupUser' method='post'>
-    <input name='name' type='text' placeholder='name'>
-    <br>
-    <input name='email' type='email' placeholder='email'>
-    <br>
-    <input name='password' type='password' placeholder='password'>
-    <br>
-    <button>Submit</button>
-    </form>
-    `;
-    res.send(html);
+    res.render("signup");
 });
 
 app.get('/login', (req,res) => {
-    var html = `
-    log in
-    <form action='/loggingin' method='post'>
-    <input name='email' type='email' placeholder='email'>
-    <br>
-    <input name='password' type='password' placeholder='password'>
-    <button>Submit</button>
-    </form>
-    `;
-    res.send(html);
+    res.render("login");
 });
 
 app.post('/signupUser', async (req,res) => {
@@ -113,16 +116,13 @@ app.post('/signupUser', async (req,res) => {
 	if (validationResult.error != null) {
         const missing = validationResult.error.details[0].context.label;
         const message = `Please provide a valid ${missing}.`;
-        res.send(`
-          <p>${message}</p>
-          <a href="/signup">Return to sign up page.</a>
-        `);
+        res.render("signupFailed", {message:message});
         return;
    }
 
     var hashedPassword = await bcrypt.hash(password, saltRounds);
 	
-	await userCollection.insertOne({name: name, email: email, password: hashedPassword});
+	await userCollection.insertOne({name: name, email: email, password: hashedPassword, user_type: "user"});
 	console.log("Inserted user.");
 
     const result = await userCollection.find({email: email}).project({name: 1, password: 1, _id: 1}).toArray();
@@ -143,14 +143,11 @@ app.post('/loggingin', async (req,res) => {
 	const schema = Joi.string().required();
 	const validationResult = schema.validate(email);
 	if (validationResult.error != null) {
-        res.send(`
-          Invalid email/password combination.
-          <a href="/login">Try again.</a>
-        `);
+        res.render("loginFailed");
         return;
 	}
 
-	const result = await userCollection.find({email: email}).project({name: 1, password: 1, _id: 1}).toArray();
+	const result = await userCollection.find({email: email}).project({name: 1, password: 1, _id: 1, user_type: 1}).toArray();
 
 	console.log(result);
 	if (result.length != 1) {
@@ -164,17 +161,14 @@ app.post('/loggingin', async (req,res) => {
 		req.session.authenticated = true;
 		req.session.email = email;
         req.session.name = result[0].name;
+        req.session.user_type = result[0].user_type;
 		req.session.cookie.maxAge = expireTime;
 
 		res.redirect('/members');
 		return;
 	}
 	else {
-		res.send(`
-          Invalid email/password combination.
-          <br>
-          <a href="/login">Try again.</a>
-        `);
+		res.render("loginFailed");
         return;
 	}
 });
@@ -186,41 +180,31 @@ app.get('/members', (req,res) => {
     }
 
     var name = req.session.name;
+    res.render("members", {name:name});
 
-    console.log(name);
+});
 
-    var image = Math.floor(Math.random() * 3) + 1;
+app.get('/admin', sessionValidation, adminAuthorization, async (req,res) => {
+    const result = await userCollection.find().project({name: 1, _id: 1, user_type: 1}).toArray();
+
+    res.render("admin", {users: result});
+});
 
 
-    if (image == 1) {
-        res.send(`
-        <h1>Hello ${name}</h1>
-        <img src='/fish.jpg' style='width:250px;'>
-        <br>
-        <button onclick="location.href='/logout'">Sign out</button>
-        `
-        );
-    }
+app.post('/promote/:name', async (req, res) => {
+    const name = req.params.name;
 
-    else if (image == 2) {
-        res.send(`
-        <h1>Hello ${name}</h1>
-        <img src='/lion.jpg' style='width:250px;'>
-        <br>
-        <button onclick="location.href='/logout'">Sign out</button>
-        `
-        );
-    }
-    else if (image == 3) {
-        res.send(`
-        <h1>Hello ${name}</h1>
-        <img src='/robot.jpg' style='width:250px;'>
-        <br>
-        <button onclick="location.href='/logout'">Sign out</button>
-        `
-        );
-    }
+    await userCollection.updateOne({ name: name }, { $set: { user_type: 'admin' } });
+    
+    res.redirect('/admin');
+});
 
+app.post('/demote/:name', async (req, res) => {
+    const name = req.params.name;
+
+    await userCollection.updateOne({ name: name }, { $set: { user_type: 'user' } });
+    
+    res.redirect('/admin');
 });
 
 app.get('/logout', (req,res) => {
@@ -232,7 +216,7 @@ app.use(express.static(__dirname + "/public"));
 
 app.get("*", (req,res) => {
 	res.status(404);
-	res.send("Page not found - 404");
+	res.render("404");
 })
 
 app.listen(port, () => {
